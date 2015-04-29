@@ -1,6 +1,7 @@
 package com.pooranpatel
 package index
 
+import org.apache.lucene.index.IndexWriterConfig.OpenMode
 import settings.Settings
 import java.nio.file.Paths
 import akka.actor.{Actor, Props}
@@ -22,18 +23,22 @@ class Indexers(startTime: DateTime) extends Actor {
 
   var nrIndexers = settings.nrIndexers
 
-  lazy val analyzer = new StandardAnalyzer()
+  val textAnalyzer = new WikipediaTextAnalyzer()
 
-  lazy val dir = FSDirectory.open(Paths.get("./index"))
+  val indexesDirectory = FSDirectory.open(Paths.get("../index"))
 
-  lazy val iwc = new IndexWriterConfig(analyzer)
+  val indexWriterConfig = new IndexWriterConfig(textAnalyzer)
 
-  lazy val iw = new IndexWriter(dir, iwc)
+  indexWriterConfig.setOpenMode(OpenMode.CREATE)
 
-  val indexer = context.actorOf(FromConfig.props(Props(classOf[Indexer], iw)), "indexer-router")
+  val indexWriter = new IndexWriter(indexesDirectory, indexWriterConfig)
+
+  val indexer = context.actorOf(FromConfig.props(Props(classOf[Indexer], indexWriter)), "indexer-router")
 
   override def receive: Receive = {
-    case msg @ PageElements(elements) => indexer ! msg
+    case msg @ PageElements(elements) =>
+      logger.info("Sending a page-elemets to index router")
+      indexer ! msg
     case msg @ Shutdown =>
       indexer ! Stop
       context become shutdownHandler
@@ -44,7 +49,7 @@ class Indexers(startTime: DateTime) extends Actor {
     case StopAck =>
       nrIndexers -= 1
       if(nrIndexers == 0) {
-        iw.close()
+        indexWriter.close()
         logger.info("Time taken for indexing in seconds = {}", (new DateTime().getMillis - startTime.getMillis) / 1000)
         context.system.shutdown()
       }

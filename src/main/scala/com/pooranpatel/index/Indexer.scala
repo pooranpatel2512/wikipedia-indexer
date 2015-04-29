@@ -1,5 +1,7 @@
 package com.pooranpatel.index
 
+import java.io.StringReader
+
 import akka.actor.Actor
 import akka.event.{Logging, LoggingAdapter}
 import com.pooranpatel.index.Indexer.model.Page
@@ -25,7 +27,7 @@ class Indexer(iw: IndexWriter) extends Actor {
   override def receive: Receive = {
     case PageElements(elements) =>
       val page = parsePageElemets(elements)
-      page.map { page => indexPage(page) }
+      page.foreach(page => indexPage(page))
     case Stop =>
       logger.info("Stop msg is received")
       sender() ! StopAck
@@ -34,10 +36,11 @@ class Indexer(iw: IndexWriter) extends Actor {
       logger.warning("Unknown message is received at indexer")
   }
 
-  private def indexPage(page: Page) = {
-    logger.info("Indexing page = {}", page)
+  private def indexPage(page: Page): Unit = {
+    logger.info("Indexing page = {}", page.title)
     val doc = new Document()
     doc.add(new TextField("title", page.title, Field.Store.YES))
+    doc.add(new TextField("text", new StringReader(page.text)))
     page.contributor.map { contributor =>
       doc.add(new TextField("contributor", contributor, Field.Store.YES))
     }
@@ -46,15 +49,17 @@ class Indexer(iw: IndexWriter) extends Actor {
 
   private def parsePageElemets(elements: mutable.Queue[XMLEvent]): Option[Page] = {
 
-    var pt: Option[String] = None
-    var pc: Option[String] = None
+    var pageTitle: Option[String] = None
+    var pageContributor: Option[String] = None
+    val pageText: StringBuilder = new StringBuilder()
+
     val iter = elements.iterator
     while(iter.hasNext) {
       val e = iter.next()
       e match {
         case EvElemStart(pre, "title", attrs, _) =>
           iter.next() match {
-            case EvText(title) => pt = Some(title)
+            case EvText(title) => pageTitle = Some(title)
             case _ => logger.warning("Some unknown element after title")
           }
         case EvElemStart(pre, "contributor", attrs, _) =>
@@ -62,17 +67,27 @@ class Indexer(iw: IndexWriter) extends Actor {
           iter.next() match {
             case EvElemStart(pre, "username", attrs, _) =>
               iter.next() match {
-                case EvText(contributor) => pc = Some(contributor)
+                case EvText(contributor) => pageContributor = Some(contributor)
                 case e @ _ => logger.warning("Some unknown element after username = {}", e)
               }
             case e @ _ => logger.warning("Some unknown element after contributor = {} ", e)
+          }
+        case EvElemStart(pre, "text", attrs, _) =>
+          iter.next() match {
+            case EvText(text) => pageText.append(text)
+            case _ => logger.warning("Some unknown element after text")
+          }
+        case EvText("ref") =>
+          iter.next() match {
+            case EvText(text) => pageText.append(text)
+            case _ => logger.warning("Some unknown element after ref")
           }
         case _ =>
       }
     }
     for {
-      title <- pt
-    } yield Page(title, pc, "")
+      title <- pageTitle
+    } yield Page(title, pageContributor, pageText.toString())
   }
 }
 
