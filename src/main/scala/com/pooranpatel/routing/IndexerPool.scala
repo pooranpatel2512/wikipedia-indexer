@@ -5,6 +5,11 @@ import akka.dispatch.Dispatchers
 import akka.routing._
 import com.typesafe.config.Config
 
+/**
+ * Akka Pool of indexers (actors)
+ * @param nrOfInstances number of instances of akka actor
+ * @param resizer pool resizer
+ */
 class IndexerPool(override val nrOfInstances: Int, override val resizer: Option[Resizer]) extends Pool {
 
   def this(config: Config) =
@@ -17,5 +22,4 @@ class IndexerPool(override val nrOfInstances: Int, override val resizer: Option[
   override def createRouter(system: ActorSystem): Router = new Router(new IndexerRoutingLogic())
 
   override def routerDispatcher: String = Dispatchers.DefaultDispatcherId
-
 }

@@ -4,56 +4,67 @@ import java.io.StringReader
 
 import akka.actor.Actor
 import akka.event.{Logging, LoggingAdapter}
-import com.pooranpatel.index.Indexer.model.Page
+import com.pooranpatel.index.Indexer.model.Article
 import org.apache.lucene.document.{Document, Field, TextField}
 import org.apache.lucene.index.IndexWriter
 
-import scala.collection.mutable
 import scala.xml.pull._
 
 
+/**
+ * Actor which indexes a wikipedia article
+ * @param indexWriter lucene index writer for index directory
+ */
+class Indexer(indexWriter: IndexWriter) extends Actor {
 
-class Indexer(iw: IndexWriter) extends Actor {
-
-  import Indexer.Protocol.{PageElements, Stop, StopAck}
+  import Indexer.Protocol.{ArticleXMLElements, Stop, StopAck}
 
   val logger: LoggingAdapter = Logging.getLogger(context.system, this)
 
-  override def postStop(): Unit = {
-    logger.warning("actor is shutting down")
-    super.postStop()
-  }
+  private var indexedArticles: Int = 0
 
   override def receive: Receive = {
-    case PageElements(elements) =>
-      val page = parsePageElemets(elements)
-      page.foreach(page => indexPage(page))
+    case ArticleXMLElements(elements) =>
+      val page = parseArticleXMLElements(elements)
+      page.foreach(page => indexArticle(page))
     case Stop =>
-      logger.info("Stop msg is received")
       sender() ! StopAck
       context stop self
     case _ =>
       logger.warning("Unknown message is received at indexer")
   }
 
-  private def indexPage(page: Page): Unit = {
-    logger.info("Indexing page = {}", page.title)
+  /**
+   * Method to index wikipedia article and store them to indexes directory
+   * @param article wikipedia article
+   */
+  private def indexArticle(article: Article): Unit = {
     val doc = new Document()
-    doc.add(new TextField("title", page.title, Field.Store.YES))
-    doc.add(new TextField("text", new StringReader(page.text)))
-    page.contributor.map { contributor =>
+    doc.add(new TextField("title", article.title, Field.Store.YES))
+    doc.add(new TextField("text", new StringReader(article.text)))
+    article.contributor.foreach { contributor =>
       doc.add(new TextField("contributor", contributor, Field.Store.YES))
     }
-    iw.addDocument(doc)
+    indexWriter.addDocument(doc)
+    indexedArticles += 1
+    if(indexedArticles == 500) {
+      logger.info("500 wikipedia articles indexed")
+      indexedArticles = 0
+    }
   }
 
-  private def parsePageElemets(elements: mutable.Queue[XMLEvent]): Option[Page] = {
+  /**
+   * Extract title, contributor and text from wikipedia article XML elements
+   * @param articleXMLElements XML elements of wikipedia article
+   * @return Option of wikipedia article
+   */
+  private def parseArticleXMLElements(articleXMLElements: List[XMLEvent]): Option[Article] = {
 
     var pageTitle: Option[String] = None
     var pageContributor: Option[String] = None
     val pageText: StringBuilder = new StringBuilder()
 
-    val iter = elements.iterator
+    val iter = articleXMLElements.iterator
     while(iter.hasNext) {
       val e = iter.next()
       e match {
@@ -65,12 +76,12 @@ class Indexer(iw: IndexWriter) extends Actor {
         case EvElemStart(pre, "contributor", attrs, _) =>
           iter.next()
           iter.next() match {
-            case EvElemStart(pre, "username", attrs, _) =>
+            case EvElemStart(_, "username", _, _) =>
               iter.next() match {
                 case EvText(contributor) => pageContributor = Some(contributor)
-                case e @ _ => logger.warning("Some unknown element after username = {}", e)
+                case e @ _ => logger.warning("Some unknown element after username")
               }
-            case e @ _ => logger.warning("Some unknown element after contributor = {} ", e)
+            case e @ _ =>
           }
         case EvElemStart(pre, "text", attrs, _) =>
           iter.next() match {
@@ -87,19 +98,45 @@ class Indexer(iw: IndexWriter) extends Actor {
     }
     for {
       title <- pageTitle
-    } yield Page(title, pageContributor, pageText.toString())
+    } yield Article(title, pageContributor, pageText.toString())
   }
 }
 
+/**
+ * Companion object of [[Indexer]]
+ */
 object Indexer {
 
   object model {
-    case class Page(title: String, contributor: Option[String], text: String)
+
+    /**
+     * Wikipedia article
+     * @param title title
+     * @param contributor contributor of an article
+     * @param text raw text of an article
+     */
+    case class Article(title: String, contributor: Option[String], text: String)
   }
 
+  /**
+   * Message communication protocol for actor [[Indexer]]
+   */
   object Protocol {
-    case class PageElements(queue: mutable.Queue[XMLEvent])
+
+    /**
+     * XML elements of a wikipedia article
+     * @param elements XML elements
+     */
+    case class ArticleXMLElements(elements: List[XMLEvent])
+
+    /**
+     * Stop message for stopping an actor
+     */
     case object Stop
+
+    /**
+     * Acknowledgment message for [[Stop]] message
+     */
     case object StopAck
   }
 }

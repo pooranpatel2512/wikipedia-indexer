@@ -6,6 +6,9 @@ import akka.routing.{BroadcastRoutingLogic, Routee, RoutingLogic, SmallestMailbo
 import scala.collection.immutable.IndexedSeq
 import index.Indexer.Protocol.Stop
 
+/**
+ * Akka Routing logic for wikipedia articles indexers.
+ */
 class IndexerRoutingLogic extends RoutingLogic {
 
   val smallestMailboxRoutingLogic = SmallestMailboxRoutingLogic()

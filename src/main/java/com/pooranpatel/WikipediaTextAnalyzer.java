@@ -11,6 +11,9 @@ import org.apache.lucene.analysis.standard.StandardFilter;
 import org.apache.lucene.analysis.standard.UAX29URLEmailTokenizer;
 import java.util.*;
 
+/**
+ * Lucene text analyzer for wikipedia article
+ */
 public class WikipediaTextAnalyzer extends Analyzer {
 
     public static final Set<String> STOP_TYPES = new HashSet<>();

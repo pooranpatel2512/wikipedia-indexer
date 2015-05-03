@@ -7,13 +7,17 @@ import java.nio.file.Paths
 import akka.actor.{Actor, Props}
 import akka.event.{Logging, LoggingAdapter}
 import akka.routing.FromConfig
-import com.pooranpatel.index.Indexer.Protocol.{PageElements, Stop, StopAck}
-import org.apache.lucene.analysis.standard.StandardAnalyzer
+import Indexer.Protocol.{ArticleXMLElements, Stop, StopAck}
 import org.apache.lucene.index.{IndexWriter, IndexWriterConfig}
 import org.apache.lucene.store.FSDirectory
 import org.joda.time.DateTime
 
-class Indexers(startTime: DateTime) extends Actor {
+/**
+ * Entry point to all the wikipedia articles indexers
+ * @param startTime startTime to indexing process
+ * @param indexesDir directory path where to store indexes
+ */
+class Indexers(startTime: DateTime, indexesDir: String) extends Actor {
 
   import Indexers.Protocol.Shutdown
 
@@ -25,7 +29,7 @@ class Indexers(startTime: DateTime) extends Actor {
 
   val textAnalyzer = new WikipediaTextAnalyzer()
 
-  val indexesDirectory = FSDirectory.open(Paths.get("../index"))
+  val indexesDirectory = FSDirectory.open(Paths.get(indexesDir))
 
   val indexWriterConfig = new IndexWriterConfig(textAnalyzer)
 
@@ -36,15 +40,17 @@ class Indexers(startTime: DateTime) extends Actor {
   val indexer = context.actorOf(FromConfig.props(Props(classOf[Indexer], indexWriter)), "indexer-router")
 
   override def receive: Receive = {
-    case msg @ PageElements(elements) =>
-      logger.info("Sending a page-elemets to index router")
+    case msg @ ArticleXMLElements(elements) =>
       indexer ! msg
     case msg @ Shutdown =>
       indexer ! Stop
       context become shutdownHandler
-    case msg @ _ => logger.info("Message = {}", msg)
+    case msg @ _ => logger.warning("Message = {}", msg)
   }
 
+  /**
+   * Shutdown handler, which waits until all indexers are stopped and then shutdown an actor system
+   */
   def shutdownHandler: Receive = {
     case StopAck =>
       nrIndexers -= 1
@@ -58,8 +64,19 @@ class Indexers(startTime: DateTime) extends Actor {
   }
 }
 
+/**
+ * Companion object of [[Indexers]]
+ */
 object Indexers {
+
+  /**
+   * Message communication protocol for actor [[Indexers]]
+   */
   object Protocol {
+
+    /**
+     * Shutdown message to shutdown actor system
+     */
     case object Shutdown
   }
 }

@@ -1,59 +1,65 @@
 import com.pooranpatel.index.{Indexers, Indexer}
-import Indexer.Protocol.PageElements
-import akka.actor.{Props, ActorSystem}
-import com.pooranpatel.settings.Settings
+import Indexer.Protocol.ArticleXMLElements
+import akka.actor.{ActorRef, Props, ActorSystem}
 import org.joda.time.DateTime
-import scala.collection.mutable
+import scala.collection.{immutable, mutable}
 import scala.io.Source
 import scala.xml.pull._
-import scala.util.control._
 import Indexers.Protocol.Shutdown
 
 
+/**
+ * Starting point of the wikipedia articles indexing App
+ */
 object MainApp extends App {
 
-  val system: ActorSystem = ActorSystem("hello-akka")
-  val settings = Settings(system)
-  val indexers = system.actorOf(Props(classOf[Indexers], new DateTime()), "indexers")
+  if(args.length != 2) {
+    println("Usage: java -jar WikipediaIndexer-0.1.0.jar <ARTICLES_FILE> <INDEX_DIR>")
+    println("<ARTICLES_FILE> = path to the wikipedia articles file")
+    println("<INDEX_DIR> = directory to store indexes")
+  } else {
+    val system: ActorSystem = ActorSystem("hello-akka")
+    val indexer = system.actorOf(Props(classOf[Indexers], new DateTime(), args(1)), "indexers")
+    readAndIndexArticles(args(0), indexer)
+    indexer ! Shutdown
+  }
 
-  val reader: XMLEventReader = new XMLEventReader(Source.fromFile("/Users/pooranpatel/Downloads/data/enwiki-latest-pages-articles.xml"))
-  val loop = new Breaks
-  var counter = 0
-  var insidePage = false
-  var pageElements: mutable.Queue[XMLEvent] = mutable.Queue.empty
-  loop.breakable {
+  /**
+   * This method reads a given wikipedia articles file and give this articles to indexer to index
+   * @param pathToArticlesFile path to to the wikipedia articles file
+   * @param indexer wikipedia article indexer
+   */
+  private def readAndIndexArticles(pathToArticlesFile: String, indexer: ActorRef) = {
+    val reader: XMLEventReader = new XMLEventReader(Source.fromFile(pathToArticlesFile))
+    var counter = 0
+    var insidePage = false
+    var articlesXMLElements: mutable.Queue[XMLEvent] = mutable.Queue.empty
+
     reader.foreach { event =>
       event match {
         case EvElemStart(_, "page", _, _) =>
           insidePage = true
-          pageElements += event
+          articlesXMLElements += event
         case EvElemEnd(_, "page") =>
-          pageElements += event
+          articlesXMLElements += event
           insidePage = false
-          indexers ! PageElements(pageElements)
+          indexer ! ArticleXMLElements(articlesXMLElements.toList)
           counter += 1
-          pageElements = mutable.Queue.empty
-        case EvElemStart(_, tag, _, _) => {
+          articlesXMLElements = mutable.Queue.empty
+        case EvElemStart(_, tag, _, _) =>
           if (insidePage) {
-            pageElements += event
+            articlesXMLElements += event
           }
-        }
-        case EvElemEnd(_, tag) => {
+        case EvElemEnd(_, tag) =>
           if (insidePage) {
-            pageElements += event
+            articlesXMLElements += event
           }
-        }
-        case EvText(t) => {
+        case EvText(t) =>
           if (insidePage) {
-            pageElements += event
+            articlesXMLElements += event
           }
-        }
         case _ => // ignore
-      }
-      if(counter == 200) {
-        loop.break()
       }
     }
   }
-  indexers ! Shutdown
 }
