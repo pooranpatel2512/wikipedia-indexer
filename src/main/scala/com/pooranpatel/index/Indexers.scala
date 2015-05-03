@@ -1,6 +1,7 @@
 package com.pooranpatel
 package index
 
+import com.pooranpatel.index.Indexers.Protocol.ShutdownNow
 import org.apache.lucene.index.IndexWriterConfig.OpenMode
 import settings.Settings
 import java.nio.file.Paths
@@ -39,12 +40,20 @@ class Indexers(startTime: DateTime, indexesDir: String) extends Actor {
 
   val indexer = context.actorOf(FromConfig.props(Props(classOf[Indexer], indexWriter)), "indexer-router")
 
+  override def postStop(): Unit = {
+    indexWriter.close()
+    logger.info("Closing an index writer")
+    super.postStop()
+  }
+
   override def receive: Receive = {
     case msg @ ArticleXMLElements(elements) =>
       indexer ! msg
     case msg @ Shutdown =>
       indexer ! Stop
       context become shutdownHandler
+    case ShutdownNow =>
+      context.system.shutdown()
     case msg @ _ => logger.warning("Message = {}", msg)
   }
 
@@ -55,7 +64,6 @@ class Indexers(startTime: DateTime, indexesDir: String) extends Actor {
     case StopAck =>
       nrIndexers -= 1
       if(nrIndexers == 0) {
-        indexWriter.close()
         logger.info("Time taken for indexing in seconds = {}", (new DateTime().getMillis - startTime.getMillis) / 1000)
         context.system.shutdown()
       }
@@ -78,5 +86,11 @@ object Indexers {
      * Shutdown message to shutdown actor system
      */
     case object Shutdown
+
+    /**
+     * Shutdown message to indicate a abrupt shutdown from a user
+     */
+    case object ShutdownNow
+
   }
 }

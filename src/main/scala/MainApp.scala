@@ -5,7 +5,7 @@ import org.joda.time.DateTime
 import scala.collection.{immutable, mutable}
 import scala.io.Source
 import scala.xml.pull._
-import Indexers.Protocol.Shutdown
+import com.pooranpatel.index.Indexers.Protocol.{ShutdownNow, Shutdown}
 
 
 /**
@@ -20,9 +20,18 @@ object MainApp extends App {
   } else {
     val system: ActorSystem = ActorSystem("hello-akka")
     val indexer = system.actorOf(Props(classOf[Indexers], new DateTime(), args(1)), "indexers")
+
+    sys addShutdownHook {
+      println("Shutting down an app")
+      indexer ! ShutdownNow
+      Thread.sleep(1500)
+      println("Done shutting down an app")
+    }
+
     readAndIndexArticles(args(0), indexer)
     indexer ! Shutdown
   }
+
 
   /**
    * This method reads a given wikipedia articles file and give this articles to indexer to index
